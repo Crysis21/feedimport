@@ -6,10 +6,11 @@ export default async function handler(req, res) {
   }
 
   try {
+    console.log('Starting manual category processing...');
     await processCategoriesWithAI(100);
-    return res.json({ success: true, message: 'Categories processed with AI' });
+    return res.json({ success: true, message: 'Category processing completed' });
   } catch (error) {
-    console.error('Cron process-categories error:', error);
+    console.error('Manual category processing error:', error);
     return res.status(500).json({ error: error.message });
   }
 }
