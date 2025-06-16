@@ -1,0 +1,27 @@
+{
+  "name": "feedimport",
+  "version": "1.0.0",
+  "description": "XML feed transformation service for eMAG compatibility",
+  "main": "api/[uuid].js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "vercel-dev": "vercel dev",
+    "scheduler": "node -e \"require('./lib/scheduler.js')\""
+  },
+  "dependencies": {
+    "@google-ai/generativelanguage": "^3.2.0",
+    "@google/generative-ai": "^0.24.1",
+    "dotenv": "^16.5.0",
+    "firebase": "^11.9.1",
+    "next": "^15.3.3",
+    "node-cron": "^4.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "xml2js": "^0.6.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "Feed Import Manager",
+  "short_name": "FeedImport",
+  "description": "Product feed import and synchronization platform",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#3b82f6",
+  "background_color": "#ffffff"
+}
