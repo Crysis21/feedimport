@@ -5,6 +5,7 @@ import FeedsList from '../components/FeedsList';
 import AddFeedForm from '../components/AddFeedForm';
 import ActiveJobs from '../components/ActiveJobs';
 import Dashboard from '../components/Dashboard';
+import ExportFeedsList from '../components/ExportFeedsList';
 
 export default function Home({ user, loading }) {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -69,6 +70,7 @@ export default function Home({ user, loading }) {
           {[
             { id: 'dashboard', label: 'Dashboard' },
             { id: 'feeds', label: 'Feeds' },
+            { id: 'export-feeds', label: 'Export Feeds' },
             { id: 'jobs', label: 'Active Jobs' },
             { id: 'add-feed', label: 'Add Feed' }
           ].map(tab => (
@@ -94,6 +96,7 @@ export default function Home({ user, loading }) {
       <main>
         {activeTab === 'dashboard' && <Dashboard user={user} />}
         {activeTab === 'feeds' && <FeedsList user={user} />}
+        {activeTab === 'export-feeds' && <ExportFeedsList user={user} />}
         {activeTab === 'jobs' && <ActiveJobs user={user} />}
         {activeTab === 'add-feed' && <AddFeedForm user={user} onFeedAdded={() => setActiveTab('feeds')} />}
       </main>
