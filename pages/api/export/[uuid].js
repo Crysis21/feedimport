@@ -67,28 +67,63 @@ function generateEmptyXML() {
 function generateProductsXML(products) {
   const builder = new xml2js.Builder();
   
-  const xmlProducts = products.map(product => ({
-    id: [product.sku || ''],
-    name: [product.title || ''],
-    description: [product.description || ''],
-    url: [product.link || ''],
-    price_b2c: [product.price || ''],
-    quantity: [product.stockQuantity?.toString() || '0'],
-    brand: [product.brand || ''],
-    avatar: [product.image || ''],
-    model: [product.mpn || ''],
-    categories: [{
-      category: product.originalCategories || []
-    }],
-    // Add eMAG category fields if available
-    ...(product.emagCategory && {
-      emag_category: [product.emagCategory],
-      emag_category_key: [product.emagCategoryId?.toString() || ''],
-      emag_category_path: [product.emagCategoryPath || '']
-    }),
-    // Add filtered category string
-    category: [generateCategoryString(product.originalCategories)]
-  }));
+  const xmlProducts = products.map(product => {
+    // Start with all original fields
+    const xmlProduct = {};
+    
+    // Add ALL original fields that were preserved
+    const originalFields = [
+      'id', 'name', 'description', 'url', 'price_b2c', 'price_b2b', 'quantity', 
+      'brand', 'avatar', 'model', 'sku', 'TVA', 'gen', 'greutate', 'latime', 
+      'lungime', 'varsta', 'image_additional1', 'image_additional2', 
+      'image_additional3', 'image_additional4'
+    ];
+    
+    // Include all original fields if they exist
+    originalFields.forEach(field => {
+      if (product[field] !== undefined && product[field] !== null) {
+        xmlProduct[field] = [product[field]];
+      }
+    });
+    
+    // Add any other fields that might be in the product but not in our standard list
+    Object.keys(product).forEach(key => {
+      if (!originalFields.includes(key) && 
+          !['title', 'link', 'image', 'stockQuantity', 'availability', 'condition', 
+            'originalCategories', 'emagCategory', 'emagCategoryId', 'emagCategoryPath',
+            'categoryProcessed', 'categoryUpdatedAt', 'feedId', 'lastUpdated', 'createdAt'].includes(key)) {
+        if (product[key] !== undefined && product[key] !== null) {
+          xmlProduct[key] = [product[key]];
+        }
+      }
+    });
+    
+    // Handle categories specially
+    if (product.originalCategories && product.originalCategories.length > 0) {
+      xmlProduct.categories = [{
+        category: product.originalCategories
+      }];
+    } else if (product.categories) {
+      xmlProduct.categories = [{
+        category: Array.isArray(product.categories) ? product.categories : [product.categories]
+      }];
+    }
+    
+    // Add eMAG category fields if available (our enhancements)
+    if (product.emagCategory) {
+      xmlProduct.emag_category = [product.emagCategory];
+      xmlProduct.emag_category_key = [product.emagCategoryId?.toString() || ''];
+      xmlProduct.emag_category_path = [product.emagCategoryPath || ''];
+    }
+    
+    // Add filtered category string for compatibility
+    const categoryString = generateCategoryString(product.originalCategories || product.categories);
+    if (categoryString) {
+      xmlProduct.category = [categoryString];
+    }
+
+    return xmlProduct;
+  });
 
   const xmlData = {
     products: {
