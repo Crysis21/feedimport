@@ -13,8 +13,8 @@ A comprehensive feed import management platform built on Next.js with Firebase b
 - **Backend**: Firebase Firestore database with Admin SDK
 - **Authentication**: Firebase Auth with Google OAuth integration
 - **AI Integration**: Google Gemini API for intelligent category matching
-- **Deployment**: Vercel serverless functions with 1024MB memory allocation
-- **Scheduling**: Node-cron for background job processing
+- **Deployment**: Vercel serverless functions + Firebase Functions for long-running tasks
+- **Scheduling**: Node-cron + Firebase Cloud Scheduler for background processing
 
 ### Core Components
 
@@ -27,13 +27,16 @@ A comprehensive feed import management platform built on Next.js with Firebase b
 - `pages/index.js`: Main dashboard with React components
 - `lib/firebase.js`: Firebase client SDK configuration
 - `lib/models.js`: Data models for feeds, products, and sync jobs
-- `lib/feedProcessor.js`: Core feed processing logic with Firebase integration
-- `lib/scheduler.js`: Background job scheduler with cron-based processing
+- `lib/batchFeedProcessor.js`: Resilient batch-based feed processing with resume capability
+- `lib/categoryProcessor.js`: Independent AI-powered category processing system
+- `lib/jobQueue.js`: Concurrent job queue manager with rate limiting
+- `lib/scheduler.js`: Background job scheduler with decoupled processing
 - `components/`: React components for dashboard UI (Dashboard, FeedsList, AddFeedForm, ActiveJobs)
 
 **Category Matching Systems**
 - `lib/fastCategoryMatcher.js`: Fast category matcher using pre-built indexes (legacy)
-- `lib/geminiCategoryMatcher.js`: AI-powered category matching using Gemini API
+- `lib/geminiCategoryMatcher.js`: AI-powered category matching using Gemini API (Vercel fallback)
+- `firebase/functions/index.js`: Firebase Functions for long-running Gemini processing (up to 60 minutes)
 - `lib/categoryIndex.json`: Pre-built search index for fast lookups
 - `emag_mapping.json`: eMAG category database (2,575 categories)
 
@@ -47,12 +50,15 @@ A comprehensive feed import management platform built on Next.js with Firebase b
 
 ### Data Flow
 
-**Feed Processing Pipeline**
+**Feed Processing Pipeline (Hybrid Architecture)**
 1. User adds feed via dashboard → Firebase `feeds` collection
-2. Scheduler checks every 5 minutes for feeds due for sync
-3. FeedProcessor fetches data and creates/updates products in Firebase
-4. Background job processes products without categories using Gemini AI
-5. Webhooks triggered on sync completion
+2. Scheduler discovers feeds due for sync every 5 minutes → adds to job queue
+3. Job queue processes up to 5 concurrent sync jobs (one per feed max) on Vercel
+4. BatchFeedProcessor processes feeds in 50-product batches with resume capability
+5. **Firebase Functions handle long-running Gemini category processing (60 min timeout)**
+6. Vercel triggers Firebase Functions for category processing every 2 minutes
+7. Stalled job cleanup and resume system runs every 10 minutes
+8. Webhooks triggered on sync completion
 
 **Authentication Flow**
 1. User signs in with Google → Firebase Auth
@@ -70,6 +76,14 @@ npm run build         # Build production bundle
 npm run start         # Start production server
 ```
 
+### Firebase Functions
+```bash
+cd firebase/functions
+npm install           # Install Firebase Functions dependencies
+firebase emulators:start --only functions  # Run Firebase Functions locally
+firebase deploy --only functions           # Deploy Firebase Functions
+```
+
 ### Category Index Management
 ```bash
 node scripts/buildIndex.js    # Rebuild category search index after emag_mapping.json changes
@@ -82,7 +96,8 @@ npm run scheduler     # Run background scheduler locally
 
 ### Deployment
 ```bash
-vercel --prod         # Deploy to production
+vercel --prod         # Deploy Vercel app
+firebase deploy --only functions  # Deploy Firebase Functions
 ```
 
 ## Environment Configuration
@@ -100,6 +115,14 @@ FIREBASE_APP_ID=
 
 # Gemini AI
 GEMINI_API_KEY=
+
+# Firebase Functions URL (set after deploying functions)
+FIREBASE_FUNCTIONS_URL=https://us-central1-your-project.cloudfunctions.net
+```
+
+**Firebase Functions Environment Variables:**
+```bash
+firebase functions:config:set gemini.api_key="your_gemini_api_key"
 ```
 
 ## Database Schema
@@ -118,16 +141,28 @@ GEMINI_API_KEY=
 
 ## Background Processing
 
-**Automated Jobs (Vercel Cron)**
-- `pages/api/cron/sync-feeds.js`: Processes scheduled feed synchronization (every 5 minutes)
-- `pages/api/cron/process-categories.js`: AI category processing for unprocessed products (every 2 minutes)
+**Automated Jobs**
 
-**Job Flow**
-1. Scheduler identifies feeds due for sync based on `syncInterval`
-2. Creates sync job in `pending` status
-3. FeedProcessor handles data fetching and product updates
-4. Updates job status to `completed` or `failed`
-5. Triggers registered webhooks with job results
+*Vercel Cron (Short Tasks):*
+- `pages/api/cron/sync-feeds.js`: Discovers feeds due for sync and adds to queue (every 5 minutes)
+- `pages/api/cron/process-queue.js`: Processes job queue with concurrent execution (every 2 minutes)
+- `pages/api/cron/process-categories.js`: Triggers Firebase Functions for category processing (every 2 minutes)
+- `pages/api/cron/resume-batches.js`: Cleanup and resume stalled jobs (every 10 minutes)
+
+*Firebase Functions (Long-Running Tasks):*
+- `processCategoriesWithAI`: AI category processing with 60-minute timeout (triggered by Vercel)
+- `scheduledCategoryProcessing`: Scheduled category processing (every 5 minutes)
+- `onSyncComplete`: Auto-trigger category processing when feed sync completes
+
+**Hybrid Job Flow (Vercel + Firebase)**
+1. Scheduler identifies feeds due for sync → creates job in `pending` status
+2. JobQueue picks up pending jobs and starts up to 5 concurrent processors on Vercel
+3. BatchFeedProcessor processes feeds in 50-product batches with progress tracking
+4. Job progress stored in Firebase with resume capability for interruptions
+5. **Firebase Functions handle Gemini category processing with 60-minute timeout**
+6. Vercel triggers Firebase Functions for long-running AI categorization
+7. Stalled jobs automatically detected and resumed or failed
+8. Webhooks triggered on completion
 
 ## Security & Authentication
 
@@ -142,11 +177,44 @@ GEMINI_API_KEY=
 
 ## Performance Considerations
 
-- Vercel functions configured with 1024MB memory for large category processing
+**Scalability Improvements**
+- Decoupled feed sync and category processing for independent scaling
+- Concurrent job processing (max 10 sync jobs simultaneously)
+- Batch-based processing (500 products per batch) with 15-minute Vercel timeouts
+- Job queue system prevents feed conflicts while allowing parallel processing
+- Resume capability for interrupted jobs eliminates wasted work
+
+**Resource Optimization**
+- Vercel functions: 1024MB memory, 30s timeout for regular APIs, 60s for cron/batch endpoints
+- Firebase Functions: 2GB memory, 60-minute timeout for Gemini AI processing
 - Firebase batch operations for efficient product updates
 - Pre-built category indexes for O(1) lookups vs O(n) searches
-- Gemini AI processing limited to 100 products per batch to avoid rate limits
+- Gemini AI processing: 20 products per batch with 10s delays (Firebase Functions)
+- Automatic cleanup of stalled jobs and temporary data
 
-## Legacy Compatibility
+**Rate Limiting**
+- Maximum 10 concurrent sync jobs across all feeds
+- One active sync job per feed maximum
+- 2-second delays between AI category processing batches
+- Exponential backoff for failed operations
 
-The original `/api/[uuid]` endpoint remains functional for existing integrations while new features use the modern API endpoints (`/api/feeds`, `/api/products`, etc.)
+## API Endpoints
+
+**Queue Management**
+- `GET /api/queue/status`: Get current job queue status and statistics
+- `POST /api/batch/continue`: Continue interrupted batch processing
+- `POST /api/firebase/trigger-categories`: Manually trigger Firebase category processing
+
+**Legacy Compatibility**
+
+The original `/api/[uuid]` endpoint remains functional for existing integrations while new features use the modern API endpoints (`/api/feeds`, `/api/products`, etc.).
+
+## Troubleshooting
+
+**Common Issues**
+- **Stalled Jobs**: Automatically detected and resumed/failed every 10 minutes
+- **Large Feeds**: Processed in 50-product batches on Vercel (fast), category processing on Firebase (60min timeout)
+- **Concurrent Syncs**: System prevents multiple syncs per feed while allowing up to 5 total
+- **Category Processing**: Firebase Functions handle long Gemini requests with 60-minute timeout
+- **Job Resume**: Interrupted jobs can resume from last completed batch
+- **Timeout Issues**: Long-running Gemini requests moved to Firebase Functions (60min vs Vercel 15min max)

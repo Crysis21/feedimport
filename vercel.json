@@ -8,6 +8,14 @@
     "pages/api/**/*.js": {
       "memory": 1024,
       "maxDuration": 30
+    },
+    "pages/api/cron/*.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "pages/api/batch/*.js": {
+      "memory": 1024,
+      "maxDuration": 60
     }
   },
   "rewrites": [
