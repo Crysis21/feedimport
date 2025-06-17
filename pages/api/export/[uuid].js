@@ -8,8 +8,8 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'UUID parameter is required' });
   }
 
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', ['GET']);
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.setHeader('Allow', ['GET', 'HEAD']);
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
@@ -20,24 +20,32 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'Export feed not found' });
     }
 
-    // Record access for analytics
-    await ExportFeedModel.recordAccess(uuid);
+    // Record access for analytics (only for GET requests, not HEAD)
+    if (req.method === 'GET') {
+      await ExportFeedModel.recordAccess(uuid);
+    }
 
-    // Get filtered products based on export feed configuration
+    // Set common headers for both GET and HEAD requests
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition', 'inline; filename="export-feed.xml"');
+    res.setHeader('Cache-Control', 'public, max-age=300'); // 5 minute cache
+
+    // For HEAD requests, just return headers without body
+    if (req.method === 'HEAD') {
+      return res.status(200).end();
+    }
+
+    // Get filtered products based on export feed configuration (only for GET)
     const products = await ExportFeedModel.getFilteredProducts(exportFeed);
     
     if (products.length === 0) {
       // Return empty XML structure
       const emptyXml = generateEmptyXML();
-      res.setHeader('Content-Type', 'application/xml');
       return res.status(200).send(emptyXml);
     }
 
     // Convert products to XML format matching the original structure
     const xmlData = generateProductsXML(products);
-    
-    res.setHeader('Content-Type', 'application/xml');
-    res.setHeader('Cache-Control', 'public, max-age=300'); // 5 minute cache
     res.status(200).send(xmlData);
     
   } catch (error) {

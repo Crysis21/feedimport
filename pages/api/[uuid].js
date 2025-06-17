@@ -8,6 +8,12 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'UUID parameter is required' });
   }
 
+  // Support both GET and HEAD methods
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.setHeader('Allow', ['GET', 'HEAD']);
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
   try {
     const feedUrl = `https://www.boribon.ro/feed/products/${uuid}`;
     
@@ -52,9 +58,16 @@ export default async function handler(req, res) {
       });
     }
     
-    const transformedXml = builder.buildObject(result);
+    // Set headers for both GET and HEAD requests
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition', 'inline; filename="feed.xml"');
     
-    res.setHeader('Content-Type', 'application/xml');
+    // For HEAD requests, just return headers without body
+    if (req.method === 'HEAD') {
+      return res.status(200).end();
+    }
+    
+    const transformedXml = builder.buildObject(result);
     res.status(200).send(transformedXml);
     
   } catch (error) {
