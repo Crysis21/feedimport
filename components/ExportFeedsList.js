@@ -165,11 +165,35 @@ export default function ExportFeedsList({ user }) {
                 <div style={{ marginBottom: '1rem' }}>
                   <strong>Filters:</strong>
                   <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: '#6b7280' }}>
+                    {/* Legacy filters */}
                     {exportFeed.filters.brand && <div>Brand: {exportFeed.filters.brand}</div>}
                     {exportFeed.filters.category && <div>Category: {exportFeed.filters.category}</div>}
                     {exportFeed.filters.emagCategoryId && <div>eMAG Category ID: {exportFeed.filters.emagCategoryId}</div>}
                     {exportFeed.filters.emagCategoryName && <div>eMAG Category: {exportFeed.filters.emagCategoryName}</div>}
+                    
+                    {/* New enhanced filters */}
+                    {exportFeed.filters.brands && exportFeed.filters.brands.length > 0 && (
+                      <div>Brands: {exportFeed.filters.brands.join(', ')}</div>
+                    )}
+                    {exportFeed.filters.includeCategories && exportFeed.filters.includeCategories.length > 0 && (
+                      <div style={{ color: '#059669' }}>Include Categories: {exportFeed.filters.includeCategories.join(', ')}</div>
+                    )}
+                    {exportFeed.filters.excludeCategories && exportFeed.filters.excludeCategories.length > 0 && (
+                      <div style={{ color: '#dc2626' }}>Exclude Categories: {exportFeed.filters.excludeCategories.join(', ')}</div>
+                    )}
+                    {exportFeed.filters.includeEmagCategories && exportFeed.filters.includeEmagCategories.length > 0 && (
+                      <div style={{ color: '#059669' }}>Include eMAG Categories: {exportFeed.filters.includeEmagCategories.join(', ')}</div>
+                    )}
+                    {exportFeed.filters.excludeEmagCategories && exportFeed.filters.excludeEmagCategories.length > 0 && (
+                      <div style={{ color: '#dc2626' }}>Exclude eMAG Categories: {exportFeed.filters.excludeEmagCategories.join(', ')}</div>
+                    )}
                   </div>
+                </div>
+              )}
+              
+              {exportFeed.maxItems && (
+                <div style={{ marginBottom: '1rem', fontSize: '0.875rem', color: '#6b7280' }}>
+                  <strong>Max Items:</strong> {parseInt(exportFeed.maxItems).toLocaleString()}
                 </div>
               )}
 
@@ -207,32 +231,55 @@ function AddExportFeedForm({ user, editingFeed, onClose, onSaved }) {
     name: '',
     feedId: '',
     pricingMultiplier: 1,
+    maxItems: '',
     filters: {
-      brand: '',
-      category: '',
-      emagCategoryId: '',
-      emagCategoryName: ''
+      brands: [],
+      includeCategories: [],
+      excludeCategories: [],
+      includeEmagCategories: [],
+      excludeEmagCategories: []
     }
   });
   const [feeds, setFeeds] = useState([]);
+  const [brands, setBrands] = useState([]);
+  const [originalCategories, setOriginalCategories] = useState([]);
+  const [emagCategories, setEmagCategories] = useState([]);
+  const [productCount, setProductCount] = useState(0);
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewProducts, setPreviewProducts] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [searchTerms, setSearchTerms] = useState({
+    brand: '',
+    originalCategory: '',
+    emagCategory: ''
+  });
 
   useEffect(() => {
     fetchFeeds();
+    fetchMetadata();
     if (editingFeed) {
       setFormData({
         name: editingFeed.name || '',
         feedId: editingFeed.feedId || '',
         pricingMultiplier: editingFeed.pricingMultiplier || 1,
+        maxItems: editingFeed.maxItems || '',
         filters: editingFeed.filters || {
-          brand: '',
-          category: '',
-          emagCategoryId: '',
-          emagCategoryName: ''
+          brands: [],
+          includeCategories: [],
+          excludeCategories: [],
+          includeEmagCategories: [],
+          excludeEmagCategories: []
         }
       });
     }
   }, [editingFeed]);
+
+  useEffect(() => {
+    if (formData.name) {
+      updateProductCount();
+    }
+  }, [formData]);
 
   const fetchFeeds = async () => {
     try {
@@ -250,6 +297,67 @@ function AddExportFeedForm({ user, editingFeed, onClose, onSaved }) {
     }
   };
 
+  const fetchMetadata = async () => {
+    try {
+      const response = await fetch('/api/export-feeds/metadata', {
+        headers: {
+          'Authorization': `Bearer ${await user.getIdToken()}`
+        }
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setBrands(data.brands || []);
+        setOriginalCategories(data.originalCategories || []);
+        setEmagCategories(data.emagCategories || []);
+      }
+    } catch (error) {
+      console.error('Error fetching metadata:', error);
+    }
+  };
+
+  const updateProductCount = async () => {
+    try {
+      const response = await fetch('/api/export-feeds/count', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${await user.getIdToken()}`
+        },
+        body: JSON.stringify(formData)
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setProductCount(data.count || 0);
+      }
+    } catch (error) {
+      console.error('Error fetching product count:', error);
+    }
+  };
+
+  const loadPreview = async () => {
+    if (loadingPreview) return;
+    setLoadingPreview(true);
+    try {
+      const response = await fetch('/api/export-feeds/preview', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${await user.getIdToken()}`
+        },
+        body: JSON.stringify({ ...formData, limit: 10 })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setPreviewProducts(data.products || []);
+        setShowPreview(true);
+      }
+    } catch (error) {
+      console.error('Error loading preview:', error);
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -258,9 +366,11 @@ function AddExportFeedForm({ user, editingFeed, onClose, onSaved }) {
       const method = editingFeed ? 'PUT' : 'POST';
       const url = editingFeed ? `/api/export-feeds?exportFeedId=${editingFeed.id}` : '/api/export-feeds';
       
-      // Filter out empty filter values
+      // Filter out empty arrays
       const filters = Object.fromEntries(
-        Object.entries(formData.filters).filter(([key, value]) => value && value.trim())
+        Object.entries(formData.filters).filter(([key, value]) => 
+          Array.isArray(value) ? value.length > 0 : value
+        )
       );
 
       const response = await fetch(url, {
@@ -290,115 +400,361 @@ function AddExportFeedForm({ user, editingFeed, onClose, onSaved }) {
     }
   };
 
+  const addToFilter = (filterType, value) => {
+    if (!value || formData.filters[filterType].includes(value)) return;
+    setFormData({
+      ...formData,
+      filters: {
+        ...formData.filters,
+        [filterType]: [...formData.filters[filterType], value]
+      }
+    });
+  };
+
+  const removeFromFilter = (filterType, value) => {
+    setFormData({
+      ...formData,
+      filters: {
+        ...formData.filters,
+        [filterType]: formData.filters[filterType].filter(item => item !== value)
+      }
+    });
+  };
+
+  const getFilteredOptions = (options, searchTerm) => {
+    if (!searchTerm) return options;
+    return options.filter(option => 
+      option.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <h3>{editingFeed ? 'Edit Export Feed' : 'Add Export Feed'}</h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.5rem' }}>×</button>
+      <div className="modal-content-large" onClick={e => e.stopPropagation()} style={{ 
+        maxWidth: showPreview ? '90vw' : '800px',
+        display: 'flex',
+        transition: 'all 0.3s ease'
+      }}>
+        {/* Main Form */}
+        <div style={{ 
+          flex: showPreview ? '0 0 60%' : '1',
+          paddingRight: showPreview ? '2rem' : '0',
+          borderRight: showPreview ? '1px solid #e5e7eb' : 'none'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+            <h3 style={{ fontSize: '1.5rem', fontWeight: '600' }}>{editingFeed ? 'Edit Export Feed' : 'Create Export Feed'}</h3>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer' }}>×</button>
+          </div>
+
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            {/* Basic Settings */}
+            <div className="form-section">
+              <h4 style={{ fontSize: '1.125rem', fontWeight: '500', marginBottom: '1rem', color: '#374151' }}>Basic Settings</h4>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Name *</label>
+                  <input
+                    className="form-input-large"
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    required
+                    placeholder="My Export Feed"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Source Feed</label>
+                  <select
+                    className="form-input-large"
+                    value={formData.feedId}
+                    onChange={(e) => setFormData({ ...formData, feedId: e.target.value })}
+                  >
+                    <option value="">All feeds</option>
+                    {feeds.map(feed => (
+                      <option key={feed.id} value={feed.id}>
+                        {feed.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Pricing Multiplier</label>
+                  <input
+                    className="form-input-large"
+                    type="number"
+                    step="0.01"
+                    value={formData.pricingMultiplier}
+                    onChange={(e) => setFormData({ ...formData, pricingMultiplier: parseFloat(e.target.value) || 1 })}
+                    placeholder="1.0"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Maximum Items</label>
+                  <input
+                    className="form-input-large"
+                    type="number"
+                    value={formData.maxItems}
+                    onChange={(e) => setFormData({ ...formData, maxItems: e.target.value })}
+                    placeholder="No limit"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Advanced Filters */}
+            <div className="form-section">
+              <h4 style={{ fontSize: '1.125rem', fontWeight: '500', marginBottom: '1rem', color: '#374151' }}>Advanced Filters</h4>
+              
+              {/* Brand Filter */}
+              <div className="form-group">
+                <label className="form-label">Brands</label>
+                <div className="filter-search-container">
+                  <input
+                    className="form-input-large"
+                    type="text"
+                    value={searchTerms.brand}
+                    onChange={(e) => setSearchTerms({ ...searchTerms, brand: e.target.value })}
+                    placeholder="Search brands..."
+                  />
+                  <div className="filter-options">
+                    {getFilteredOptions(brands, searchTerms.brand).slice(0, 10).map(brand => (
+                      <button
+                        key={brand}
+                        type="button"
+                        className="filter-option-btn"
+                        onClick={() => addToFilter('brands', brand)}
+                        disabled={formData.filters.brands.includes(brand)}
+                      >
+                        {brand}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="selected-filters">
+                  {formData.filters.brands.map(brand => (
+                    <span key={brand} className="filter-tag">
+                      {brand}
+                      <button type="button" onClick={() => removeFromFilter('brands', brand)}>×</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Original Categories */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Include Categories</label>
+                  <div className="filter-search-container">
+                    <input
+                      className="form-input-large"
+                      type="text"
+                      value={searchTerms.originalCategory}
+                      onChange={(e) => setSearchTerms({ ...searchTerms, originalCategory: e.target.value })}
+                      placeholder="Search categories..."
+                    />
+                    <div className="filter-options">
+                      {getFilteredOptions(originalCategories, searchTerms.originalCategory).slice(0, 10).map(category => (
+                        <button
+                          key={category}
+                          type="button"
+                          className="filter-option-btn"
+                          onClick={() => addToFilter('includeCategories', category)}
+                          disabled={formData.filters.includeCategories.includes(category)}
+                        >
+                          {category}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="selected-filters">
+                    {formData.filters.includeCategories.map(category => (
+                      <span key={category} className="filter-tag filter-tag-include">
+                        {category}
+                        <button type="button" onClick={() => removeFromFilter('includeCategories', category)}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Exclude Categories</label>
+                  <div className="filter-search-container">
+                    <input
+                      className="form-input-large"
+                      type="text"
+                      value={searchTerms.originalCategory}
+                      onChange={(e) => setSearchTerms({ ...searchTerms, originalCategory: e.target.value })}
+                      placeholder="Search categories..."
+                    />
+                    <div className="filter-options">
+                      {getFilteredOptions(originalCategories, searchTerms.originalCategory).slice(0, 10).map(category => (
+                        <button
+                          key={category}
+                          type="button"
+                          className="filter-option-btn"
+                          onClick={() => addToFilter('excludeCategories', category)}
+                          disabled={formData.filters.excludeCategories.includes(category)}
+                        >
+                          {category}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="selected-filters">
+                    {formData.filters.excludeCategories.map(category => (
+                      <span key={category} className="filter-tag filter-tag-exclude">
+                        {category}
+                        <button type="button" onClick={() => removeFromFilter('excludeCategories', category)}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* eMAG Categories */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Include eMAG Categories</label>
+                  <div className="filter-search-container">
+                    <input
+                      className="form-input-large"
+                      type="text"
+                      value={searchTerms.emagCategory}
+                      onChange={(e) => setSearchTerms({ ...searchTerms, emagCategory: e.target.value })}
+                      placeholder="Search eMAG categories..."
+                    />
+                    <div className="filter-options">
+                      {getFilteredOptions(emagCategories.map(cat => cat.title), searchTerms.emagCategory).slice(0, 10).map(category => (
+                        <button
+                          key={category}
+                          type="button"
+                          className="filter-option-btn"
+                          onClick={() => addToFilter('includeEmagCategories', category)}
+                          disabled={formData.filters.includeEmagCategories.includes(category)}
+                        >
+                          {category}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="selected-filters">
+                    {formData.filters.includeEmagCategories.map(category => (
+                      <span key={category} className="filter-tag filter-tag-include">
+                        {category}
+                        <button type="button" onClick={() => removeFromFilter('includeEmagCategories', category)}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Exclude eMAG Categories</label>
+                  <div className="filter-search-container">
+                    <input
+                      className="form-input-large"
+                      type="text"
+                      value={searchTerms.emagCategory}
+                      onChange={(e) => setSearchTerms({ ...searchTerms, emagCategory: e.target.value })}
+                      placeholder="Search eMAG categories..."
+                    />
+                    <div className="filter-options">
+                      {getFilteredOptions(emagCategories.map(cat => cat.title), searchTerms.emagCategory).slice(0, 10).map(category => (
+                        <button
+                          key={category}
+                          type="button"
+                          className="filter-option-btn"
+                          onClick={() => addToFilter('excludeEmagCategories', category)}
+                          disabled={formData.filters.excludeEmagCategories.includes(category)}
+                        >
+                          {category}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="selected-filters">
+                    {formData.filters.excludeEmagCategories.map(category => (
+                      <span key={category} className="filter-tag filter-tag-exclude">
+                        {category}
+                        <button type="button" onClick={() => removeFromFilter('excludeEmagCategories', category)}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Product Count Display */}
+            <div className="product-count-display">
+              <span style={{ fontSize: '1.125rem', fontWeight: '500', color: '#374151' }}>
+                Products matching filters: <strong style={{ color: '#059669' }}>{productCount.toLocaleString()}</strong>
+              </span>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid #e5e7eb' }}>
+              <button 
+                type="button" 
+                onClick={loadPreview}
+                disabled={loadingPreview || productCount === 0}
+                className="btn btn-outline"
+              >
+                {loadingPreview ? 'Loading...' : 'Preview Products'}
+              </button>
+              
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button type="button" onClick={onClose} className="btn btn-secondary-large">
+                  Cancel
+                </button>
+                <button type="submit" disabled={loading} className="btn btn-primary-large">
+                  {loading ? 'Saving...' : (editingFeed ? 'Update Feed' : 'Create Feed')}
+                </button>
+              </div>
+            </div>
+          </form>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label>Name *</label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              required
-              placeholder="My Export Feed"
-            />
-          </div>
-
-          <div style={{ marginBottom: '1rem' }}>
-            <label>Source Feed (optional)</label>
-            <select
-              value={formData.feedId}
-              onChange={(e) => setFormData({ ...formData, feedId: e.target.value })}
-            >
-              <option value="">All feeds</option>
-              {feeds.map(feed => (
-                <option key={feed.id} value={feed.id}>
-                  {feed.name}
-                </option>
+        {/* Preview Panel */}
+        {showPreview && (
+          <div style={{ flex: '0 0 40%', paddingLeft: '2rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h4 style={{ fontSize: '1.125rem', fontWeight: '500', color: '#374151' }}>Preview Products</h4>
+              <button 
+                type="button" 
+                onClick={() => setShowPreview(false)}
+                style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer' }}
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="preview-products" style={{ maxHeight: '500px', overflowY: 'auto' }}>
+              {previewProducts.map((product, index) => (
+                <div key={product.id} className="preview-product-card">
+                  <div style={{ fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.25rem' }}>
+                    {product.title}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.5rem' }}>
+                    {product.brand} • {product.price_b2c || product.price} {product.currency || 'RON'}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                    Categories: {(product.originalCategories || []).join(', ')}
+                  </div>
+                  {product.emagCategory && (
+                    <div style={{ fontSize: '0.75rem', color: '#059669' }}>
+                      eMAG: {product.emagCategory}
+                    </div>
+                  )}
+                </div>
               ))}
-            </select>
+            </div>
           </div>
-
-          <div style={{ marginBottom: '1rem' }}>
-            <label>Pricing Multiplier</label>
-            <input
-              type="number"
-              step="0.01"
-              value={formData.pricingMultiplier}
-              onChange={(e) => setFormData({ ...formData, pricingMultiplier: parseFloat(e.target.value) || 1 })}
-              placeholder="1.0"
-            />
-          </div>
-
-          <h4 style={{ marginBottom: '1rem' }}>Filters (optional)</h4>
-
-          <div style={{ marginBottom: '1rem' }}>
-            <label>Brand</label>
-            <input
-              type="text"
-              value={formData.filters.brand}
-              onChange={(e) => setFormData({ 
-                ...formData, 
-                filters: { ...formData.filters, brand: e.target.value }
-              })}
-              placeholder="Brand name"
-            />
-          </div>
-
-          <div style={{ marginBottom: '1rem' }}>
-            <label>Category</label>
-            <input
-              type="text"
-              value={formData.filters.category}
-              onChange={(e) => setFormData({ 
-                ...formData, 
-                filters: { ...formData.filters, category: e.target.value }
-              })}
-              placeholder="Category name"
-            />
-          </div>
-
-          <div style={{ marginBottom: '1rem' }}>
-            <label>eMAG Category ID</label>
-            <input
-              type="text"
-              value={formData.filters.emagCategoryId}
-              onChange={(e) => setFormData({ 
-                ...formData, 
-                filters: { ...formData.filters, emagCategoryId: e.target.value }
-              })}
-              placeholder="eMAG category ID"
-            />
-          </div>
-
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label>eMAG Category Name</label>
-            <input
-              type="text"
-              value={formData.filters.emagCategoryName}
-              onChange={(e) => setFormData({ 
-                ...formData, 
-                filters: { ...formData.filters, emagCategoryName: e.target.value }
-              })}
-              placeholder="eMAG category name"
-            />
-          </div>
-
-          <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
-            <button type="button" onClick={onClose} className="btn btn-secondary">
-              Cancel
-            </button>
-            <button type="submit" disabled={loading} className="btn btn-primary">
-              {loading ? 'Saving...' : (editingFeed ? 'Update' : 'Create')}
-            </button>
-          </div>
-        </form>
+        )}
       </div>
     </div>
   );
