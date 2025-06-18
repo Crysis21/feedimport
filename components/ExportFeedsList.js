@@ -330,7 +330,6 @@ function AddExportFeedForm({ user, editingFeed, onClose, onSaved }) {
             <input
               type="number"
               step="0.01"
-              min="0.01"
               value={formData.pricingMultiplier}
               onChange={(e) => setFormData({ ...formData, pricingMultiplier: parseFloat(e.target.value) || 1 })}
               placeholder="1.0"
